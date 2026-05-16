@@ -277,9 +277,9 @@ function Admin() {
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
                 <div className="max-w-md w-full">
                     <div className="text-center mb-8">
-                        <div className="w-20 h-20 bg-gradient-to-br from-rose-500 to-pink-600 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-2xl">
-                            <span className="text-4xl">👑</span>
-                        </div>
+<div className="w-20 h-20 bg-gradient-to-br from-rose-500 to-pink-600 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-2xl">
+    <img src="https://res.cloudinary.com/djjgkezui/image/upload/v1778959179/IMG-20260516-WA0050_zegaok.jpg" alt="Logo" className="w-full h-full object-center" />
+</div>
                         <h1 className="text-3xl font-bold text-white mb-2">Admin Portal</h1>
                         <p className="text-purple-200">Secure access only</p>
                     </div>
@@ -337,9 +337,9 @@ function Admin() {
                 <div className="flex flex-col h-full">
                     <div className="p-6 border-b border-gray-200">
                         <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-gradient-to-br from-rose-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
-                                <span className="text-white font-bold text-xl">👑</span>
-                            </div>
+<div className="w-12 h-12 bg-gradient-to-br from-rose-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
+    <img src="https://res.cloudinary.com/djjgkezui/image/upload/v1778959179/IMG-20260516-WA0050_zegaok.jpg" alt="Logo" className="w-full h-full object-center" />
+</div>
                             <div>
                                 <h2 className="font-bold text-gray-800 text-lg">Admin Panel</h2>
                                 <p className="text-xs text-gray-500">{user?.name}</p>
