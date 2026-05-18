@@ -45,8 +45,15 @@ function Admin() {
     const notificationSubscription = useRef(null)
 
     // Simple notification sound using Web Audio API
+    // Play notification sound - safely
     function playNotificationSound() {
         try {
+            // Check if AudioContext is supported
+            if (!window.AudioContext && !window.webkitAudioContext) {
+                console.log('AudioContext not supported');
+                return;
+            }
+
             const audioContext = new (window.AudioContext || window.webkitAudioContext)()
             const oscillator = audioContext.createOscillator()
             const gainNode = audioContext.createGain()
@@ -64,16 +71,51 @@ function Admin() {
 
             audioContext.resume().catch(e => console.log('Audio resume failed'))
         } catch (err) {
-            console.log('Sound not supported')
+            console.log('Sound not supported:', err)
         }
     }
 
     // Show browser notification
+    // Show browser notification - fixed for mobile browsers
     function showBrowserNotification(title, body) {
+        // Check if we're in a secure context and notification is supported
+        if (!window.isSecureContext) {
+            console.log('Not in secure context, cannot show notification');
+            return;
+        }
+
+        // Check if Notification API is available
+        if (!('Notification' in window)) {
+            console.log('Notifications not supported');
+            return;
+        }
+
+        // Check permission
         if (Notification.permission === 'granted') {
-            new Notification(title, { body, icon: '/favicon.ico' })
+            try {
+                // For mobile browsers, we need to create a service worker registration
+                if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.ready.then(registration => {
+                        registration.showNotification(title, {
+                            body: body,
+                            icon: '/favicon.ico',
+                            vibrate: [200, 100, 200],
+                            silent: false
+                        });
+                    });
+                } else {
+                    // Fallback for browsers that don't support service worker notifications
+                    // Use the regular Notification API (may not work on all mobiles)
+                    const notification = new Notification(title, { body, icon: '/favicon.ico' });
+                    setTimeout(() => notification.close(), 5000);
+                }
+            } catch (err) {
+                console.log('Notification error:', err);
+                // Silent fail - don't break the approval process
+            }
         } else if (Notification.permission !== 'denied') {
-            Notification.requestPermission()
+            // Don't request permission automatically - wait for user action
+            console.log('Notification permission not granted');
         }
     }
 
@@ -510,10 +552,15 @@ function Admin() {
                 setNotifications(prev => [successNotif, ...prev])
                 setUnreadCount(prev => prev + 1)
                 playNotificationSound()
-                showBrowserNotification(
-                    'Upgrade Approved!',
-                    `${actualUser.name || request.user_name || request.user_email} upgraded to ${request.to_package_tier}`
-                )
+                // In the approveUpgradeRequest function, where you call showBrowserNotification
+                try {
+                    showBrowserNotification(
+                        'Upgrade Approved!',
+                        `${actualUser.name || request.user_name || request.user_email} upgraded to ${request.to_package_tier}`
+                    )
+                } catch (err) {
+                    console.log('Browser notification not supported on this device')
+                }
 
                 alert(`✅ Upgrade approved! ${actualUser.name || request.user_name || request.user_email} has been upgraded to ${request.to_package_tier}.`)
 
