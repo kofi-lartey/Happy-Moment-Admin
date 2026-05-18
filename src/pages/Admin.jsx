@@ -38,7 +38,7 @@ function Admin() {
     const [unreadCount, setUnreadCount] = useState(0)
     const previousRequestCount = useRef(0)
     const pollingInterval = useRef(null)
-    
+
     // Admin notification states for real-time updates
     const [adminNotifications, setAdminNotifications] = useState([])
     const [unreadAdminNotifications, setUnreadAdminNotifications] = useState(0)
@@ -102,7 +102,7 @@ function Admin() {
                 .from('admin_notifications')
                 .update({ is_read: true })
                 .eq('id', notificationId)
-            
+
             setAdminNotifications(prev => prev.filter(n => n.id !== notificationId))
             setUnreadAdminNotifications(prev => Math.max(0, prev - 1))
         } catch (err) {
@@ -117,7 +117,7 @@ function Admin() {
                 .from('admin_notifications')
                 .update({ is_read: true })
                 .eq('is_read', false)
-            
+
             setAdminNotifications([])
             setUnreadAdminNotifications(0)
         } catch (err) {
@@ -381,6 +381,7 @@ function Admin() {
     }
 
     // Approve upgrade request - updates user's package
+    // Approve upgrade request - let the trigger handle user sync
     async function approveUpgradeRequest(requestId) {
         if (!confirm('Approve this upgrade request? The user will be upgraded immediately.')) return
 
@@ -395,44 +396,61 @@ function Admin() {
                 const expiresAt = new Date()
                 expiresAt.setMonth(expiresAt.getMonth() + 1)
 
-                const { error: packageError } = await supabase
+                // Check if user already has a package
+                const { data: existingPackage } = await supabase
                     .from('user_packages')
-                    .insert([{
-                        user_id: request.user_id,
-                        package_id: request.to_package_id,
-                        package_tier: request.to_package_tier,
-                        started_at: new Date().toISOString(),
-                        expires_at: expiresAt.toISOString(),
-                        is_active: true,
-                        payment_status: 'confirmed',
-                        payment_confirmed_at: new Date().toISOString(),
-                        payment_confirmed_by: user?.name || 'admin',
-                        payment_method: request.payment_method,
-                        payment_reference: request.payment_reference_code,
-                        payment_amount: request.amount_paid,
-                        payment_currency: request.currency || 'GHS',
-                        upgrade_request_id: request.id
-                    }])
+                    .select('id')
+                    .eq('user_id', request.user_id)
+                    .maybeSingle()
 
-                if (packageError) throw packageError
+                if (existingPackage) {
+                    // UPDATE existing package - trigger will sync user
+                    const { error: updateError } = await supabase
+                        .from('user_packages')
+                        .update({
+                            package_id: request.to_package_id,
+                            package_tier: request.to_package_tier,
+                            expires_at: expiresAt.toISOString(),
+                            is_active: true,
+                            payment_status: 'confirmed',
+                            payment_confirmed_at: new Date().toISOString(),
+                            payment_confirmed_by: user?.name || 'admin',
+                            payment_method: request.payment_method,
+                            payment_reference: request.payment_reference_code,
+                            payment_amount: request.amount_paid,
+                            payment_currency: request.currency || 'GHS',
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', existingPackage.id)
 
-                await supabase
-                    .from('users')
-                    .update({
-                        package_tier: request.to_package_tier,
-                        package_id: request.to_package_id,
-                        package_name: request.to_package_tier,
-                        package_expires_at: expiresAt.toISOString(),
-                        payment_status: 'confirmed',
-                        payment_method: request.payment_method,
-                        payment_reference: request.payment_reference_code,
-                        payment_confirmed_at: new Date().toISOString(),
-                        payment_confirmed_by: user?.name || 'admin',
-                        package_pending: null,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', request.user_id)
+                    if (updateError) throw updateError
+                } else {
+                    // INSERT new package - trigger will sync user
+                    const { error: insertError } = await supabase
+                        .from('user_packages')
+                        .insert([{
+                            user_id: request.user_id,
+                            package_id: request.to_package_id,
+                            package_tier: request.to_package_tier,
+                            started_at: new Date().toISOString(),
+                            expires_at: expiresAt.toISOString(),
+                            is_active: true,
+                            payment_status: 'confirmed',
+                            payment_confirmed_at: new Date().toISOString(),
+                            payment_confirmed_by: user?.name || 'admin',
+                            payment_method: request.payment_method,
+                            payment_reference: request.payment_reference_code,
+                            payment_amount: request.amount_paid,
+                            payment_currency: request.currency || 'GHS',
+                            upgrade_request_id: request.id
+                        }])
 
+                    if (insertError) throw insertError
+                }
+
+                // ✅ REMOVED the manual users.update() - let the trigger handle it!
+
+                // Update upgrade request status
                 await supabase
                     .from('upgrade_requests')
                     .update({
@@ -442,9 +460,11 @@ function Admin() {
                     })
                     .eq('id', requestId)
 
+                // Remove from local state
                 setUpgradeRequests(prev => prev.filter(r => r.id !== requestId))
                 previousRequestCount.current = upgradeRequests.length - 1
 
+                // Add success notification
                 const successNotif = {
                     id: Date.now(),
                     title: 'Upgrade Approved ✅',
@@ -463,12 +483,15 @@ function Admin() {
                 )
 
                 alert(`✅ Upgrade approved! ${request.user_name || request.user_email} has been upgraded to ${request.to_package_tier}.`)
+
+                // Refresh data
                 await loadUsers()
                 await loadUserPackages()
+                await loadUpgradeRequestsWithNotification()
             }
         } catch (err) {
             console.error('Error approving upgrade:', err)
-            alert('Failed to approve upgrade. Please try again.')
+            alert('Failed to approve upgrade: ' + (err.message || 'Please try again.'))
         }
     }
 
@@ -571,7 +594,7 @@ function Admin() {
 
         const subscription = supabase
             .channel('admin_notifications_changes')
-            .on('postgres_changes', 
+            .on('postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'admin_notifications' },
                 (payload) => {
                     console.log('New admin notification:', payload.new)
@@ -768,7 +791,7 @@ function Admin() {
                                 <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
                                     <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-rose-50 to-pink-50">
                                         <h3 className="font-bold text-gray-800">
-                                            Notifications 
+                                            Notifications
                                             {unreadAdminNotifications > 0 && (
                                                 <span className="ml-2 text-xs text-rose-500">({unreadAdminNotifications} new)</span>
                                             )}
@@ -803,8 +826,8 @@ function Admin() {
                                                 >
                                                     <div className="flex items-start gap-3">
                                                         <div className="text-xl">
-                                                            {notification.type === 'upgrade' ? '🚀' : 
-                                                             notification.type === 'payment' ? '💰' : '📢'}
+                                                            {notification.type === 'upgrade' ? '🚀' :
+                                                                notification.type === 'payment' ? '💰' : '📢'}
                                                         </div>
                                                         <div className="flex-1">
                                                             <p className="font-semibold text-gray-800 text-sm">{notification.title}</p>
