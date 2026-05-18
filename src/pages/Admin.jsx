@@ -423,18 +423,28 @@ function Admin() {
     }
 
     // Approve upgrade request - updates user's package
+    // Approve upgrade request - updates user's package
     async function approveUpgradeRequest(requestId) {
         if (!confirm('Approve this upgrade request? The user will be upgraded immediately.')) return
 
         try {
-            const { data: request } = await supabase
+            console.log('🔍 Starting approval for request ID:', requestId)
+
+            const { data: request, error: requestError } = await supabase
                 .from('upgrade_requests')
                 .select('*')
                 .eq('id', requestId)
                 .single()
 
+            if (requestError) {
+                console.error('❌ Error fetching request:', requestError)
+                throw new Error('Could not find upgrade request')
+            }
+
+            console.log('📋 Request details:', request)
+
             if (request) {
-                // VALIDATE PACKAGE ID FIRST - moved to top
+                // Map package tier to correct package ID
                 const packageIdMap = {
                     free: 74,
                     basic: 75,
@@ -442,23 +452,47 @@ function Admin() {
                     enterprise: 77
                 }
 
-                const validPackageId = packageIdMap[request.to_package_tier]
-                if (!validPackageId) {
+                const finalPackageId = packageIdMap[request.to_package_tier]
+                if (!finalPackageId) {
                     throw new Error(`Invalid package tier: ${request.to_package_tier}`)
                 }
 
-                // Use validPackageId instead of request.to_package_id
-                const finalPackageId = validPackageId
+                console.log('📦 Package mapping:', { tier: request.to_package_tier, id: finalPackageId })
 
-                // Find the actual user by email
-                const { data: actualUser } = await supabase
-                    .from('users')
-                    .select('id, email, name')
-                    .eq('email', request.user_email)
-                    .single()
+                // Find the actual user by email - try both fields
+                let actualUser = null
+
+                // First try by email field
+                if (request.user_email) {
+                    const { data: userByEmail } = await supabase
+                        .from('users')
+                        .select('*')
+                        .eq('email', request.user_email)
+                        .maybeSingle()
+
+                    if (userByEmail) {
+                        actualUser = userByEmail
+                        console.log('✅ Found user by email:', actualUser.id)
+                    }
+                }
+
+                // If not found by email, try by user_id
+                if (!actualUser && request.user_id) {
+                    const { data: userById } = await supabase
+                        .from('users')
+                        .select('*')
+                        .eq('id', request.user_id)
+                        .maybeSingle()
+
+                    if (userById) {
+                        actualUser = userById
+                        console.log('✅ Found user by ID:', actualUser.id)
+                    }
+                }
 
                 if (!actualUser) {
-                    throw new Error(`User not found with email: ${request.user_email}`)
+                    console.error('❌ User not found for email:', request.user_email, 'or ID:', request.user_id)
+                    throw new Error(`User not found with email: ${request.user_email} or ID: ${request.user_id}`)
                 }
 
                 const expiresAt = new Date()
@@ -470,7 +504,9 @@ function Admin() {
                     .select('id')
                     .eq('user_id', actualUser.id)
                     .eq('is_active', true)
-                    .maybeSingle()
+                    .maybeSingle()  // Use maybeSingle instead of single
+
+                console.log('Existing package check:', existingPackage)
 
                 let packageError
 
@@ -495,6 +531,11 @@ function Admin() {
                         })
                         .eq('id', existingPackage.id)
                     packageError = error
+                    if (packageError) {
+                        console.error('❌ Error updating package:', packageError)
+                    } else {
+                        console.log('✅ Package updated successfully')
+                    }
                 } else {
                     // INSERT new package
                     console.log('➕ Inserting new package for user:', actualUser.id)
@@ -517,35 +558,44 @@ function Admin() {
                             upgrade_request_id: request.id
                         }])
                     packageError = error
+                    if (packageError) {
+                        console.error('❌ Error inserting package:', packageError)
+                    } else {
+                        console.log('✅ Package inserted successfully')
+                    }
                 }
 
                 if (packageError) throw packageError
 
-                // Update user's record
+                // Update user's record in users table
+                console.log('📝 Updating users table for:', actualUser.id)
                 const { error: userUpdateError } = await supabase
                     .from('users')
                     .update({
-                        package_tier: request.to_package_tier,  // Should change from 'free' to 'basic'
-                        package_id: request.to_package_id,      // Should change from 74 to 75
-                        package_name: request.to_package_tier,  // Should change to 'Basic'
+                        package_tier: request.to_package_tier,
+                        package_id: finalPackageId,
+                        package_name: request.to_package_tier.charAt(0).toUpperCase() + request.to_package_tier.slice(1),
                         package_expires_at: expiresAt.toISOString(),
-                        payment_status: 'confirmed',             // Should change from 'pending' to 'confirmed'
+                        payment_status: 'confirmed',
                         payment_method: request.payment_method,
                         payment_reference: request.payment_reference_code,
                         payment_confirmed_at: new Date().toISOString(),
                         payment_confirmed_by: user?.name || 'admin',
-                        package_pending: null,                   // Should clear this
+                        package_pending: null,
                         pending_upgrade_id: null,
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', actualUser.id)
 
                 if (userUpdateError) {
-                    console.error('Failed to update users table:', userUpdateError)
+                    console.error('❌ Failed to update users table:', userUpdateError)
+                    throw userUpdateError
                 }
+                console.log('✅ Users table updated successfully')
 
                 // Update upgrade request status
-                await supabase
+                console.log('📝 Updating upgrade request status')
+                const { error: upgradeError } = await supabase
                     .from('upgrade_requests')
                     .update({
                         status: 'approved',
@@ -553,6 +603,12 @@ function Admin() {
                         approved_by: user?.name || 'admin'
                     })
                     .eq('id', requestId)
+
+                if (upgradeError) {
+                    console.error('❌ Failed to update upgrade request:', upgradeError)
+                    throw upgradeError
+                }
+                console.log('✅ Upgrade request status updated to approved')
 
                 // Remove from local state
                 setUpgradeRequests(prev => prev.filter(r => r.id !== requestId))
@@ -583,12 +639,15 @@ function Admin() {
 
                 alert(`✅ Upgrade approved! ${actualUser.name || request.user_name || request.user_email} has been upgraded to ${request.to_package_tier}.`)
 
+                // Refresh all data
                 await loadUsers()
                 await loadUserPackages()
                 await loadUpgradeRequestsWithNotification()
+
+                console.log('🎉 Approval process completed successfully')
             }
         } catch (err) {
-            console.error('Error approving upgrade:', err)
+            console.error('❌ Error approving upgrade:', err)
             alert('Failed to approve upgrade: ' + (err.message || 'Please try again.'))
         }
     }
