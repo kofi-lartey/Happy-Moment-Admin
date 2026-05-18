@@ -381,7 +381,7 @@ function Admin() {
     }
 
     // Approve upgrade request - updates user's package
-    // Approve upgrade request - let the trigger handle user sync
+    // Approve upgrade request - updates user's package
     async function approveUpgradeRequest(requestId) {
         if (!confirm('Approve this upgrade request? The user will be upgraded immediately.')) return
 
@@ -393,19 +393,34 @@ function Admin() {
                 .single()
 
             if (request) {
+                // Find the correct user ID from the users table using email
+                const { data: actualUser } = await supabase
+                    .from('users')
+                    .select('id, email, name')
+                    .eq('email', request.user_email)  // Use email - this is safe across both types
+                    .single()
+
+                if (!actualUser) {
+                    throw new Error(`User not found with email: ${request.user_email}`)
+                }
+                console.log('✅ Found actual user:', actualUser)
+
                 const expiresAt = new Date()
                 expiresAt.setMonth(expiresAt.getMonth() + 1)
 
-                // Check if user already has a package
+                // Check if user already has a package using the correct user ID
                 const { data: existingPackage } = await supabase
                     .from('user_packages')
                     .select('id')
-                    .eq('user_id', request.user_id)
+                    .eq('user_id', actualUser.id)
                     .maybeSingle()
 
+                let packageError
+
                 if (existingPackage) {
-                    // UPDATE existing package - trigger will sync user
-                    const { error: updateError } = await supabase
+                    // UPDATE existing package
+                    console.log('✏️ Updating existing package for user:', actualUser.id)
+                    const { error } = await supabase
                         .from('user_packages')
                         .update({
                             package_id: request.to_package_id,
@@ -422,14 +437,14 @@ function Admin() {
                             updated_at: new Date().toISOString()
                         })
                         .eq('id', existingPackage.id)
-
-                    if (updateError) throw updateError
+                    packageError = error
                 } else {
-                    // INSERT new package - trigger will sync user
-                    const { error: insertError } = await supabase
+                    // INSERT new package
+                    console.log('➕ Inserting new package for user:', actualUser.id)
+                    const { error } = await supabase
                         .from('user_packages')
                         .insert([{
-                            user_id: request.user_id,
+                            user_id: actualUser.id,
                             package_id: request.to_package_id,
                             package_tier: request.to_package_tier,
                             started_at: new Date().toISOString(),
@@ -444,11 +459,28 @@ function Admin() {
                             payment_currency: request.currency || 'GHS',
                             upgrade_request_id: request.id
                         }])
-
-                    if (insertError) throw insertError
+                    packageError = error
                 }
 
-                // ✅ REMOVED the manual users.update() - let the trigger handle it!
+                if (packageError) throw packageError
+
+                // Update user's record in users table
+                await supabase
+                    .from('users')
+                    .update({
+                        package_tier: request.to_package_tier,
+                        package_id: request.to_package_id,
+                        package_name: request.to_package_tier,
+                        package_expires_at: expiresAt.toISOString(),
+                        payment_status: 'confirmed',
+                        payment_method: request.payment_method,
+                        payment_reference: request.payment_reference_code,
+                        payment_confirmed_at: new Date().toISOString(),
+                        payment_confirmed_by: user?.name || 'admin',
+                        package_pending: null,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', actualUser.id)
 
                 // Update upgrade request status
                 await supabase
@@ -468,7 +500,7 @@ function Admin() {
                 const successNotif = {
                     id: Date.now(),
                     title: 'Upgrade Approved ✅',
-                    message: `${request.user_name || request.user_email} has been upgraded to ${request.to_package_tier}`,
+                    message: `${actualUser.name || request.user_name || request.user_email} has been upgraded to ${request.to_package_tier}`,
                     type: 'success',
                     is_read: false,
                     created_at: new Date().toISOString(),
@@ -479,12 +511,11 @@ function Admin() {
                 playNotificationSound()
                 showBrowserNotification(
                     'Upgrade Approved!',
-                    `${request.user_name || request.user_email} upgraded to ${request.to_package_tier}`
+                    `${actualUser.name || request.user_name || request.user_email} upgraded to ${request.to_package_tier}`
                 )
 
-                alert(`✅ Upgrade approved! ${request.user_name || request.user_email} has been upgraded to ${request.to_package_tier}.`)
+                alert(`✅ Upgrade approved! ${actualUser.name || request.user_name || request.user_email} has been upgraded to ${request.to_package_tier}.`)
 
-                // Refresh data
                 await loadUsers()
                 await loadUserPackages()
                 await loadUpgradeRequestsWithNotification()
@@ -494,7 +525,6 @@ function Admin() {
             alert('Failed to approve upgrade: ' + (err.message || 'Please try again.'))
         }
     }
-
     // Reject upgrade request
     async function rejectUpgradeRequest(requestId) {
         if (!confirm('Reject this upgrade request?')) return
