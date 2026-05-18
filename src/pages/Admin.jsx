@@ -393,33 +393,33 @@ function Admin() {
                 .single()
 
             if (request) {
-                // Find the correct user ID from the users table using email
+                // Find the actual user by email
                 const { data: actualUser } = await supabase
                     .from('users')
                     .select('id, email, name')
-                    .eq('email', request.user_email)  // Use email - this is safe across both types
+                    .eq('email', request.user_email)
                     .single()
 
                 if (!actualUser) {
                     throw new Error(`User not found with email: ${request.user_email}`)
                 }
-                console.log('✅ Found actual user:', actualUser)
 
                 const expiresAt = new Date()
                 expiresAt.setMonth(expiresAt.getMonth() + 1)
 
-                // Check if user already has a package using the correct user ID
+                // FIRST: Check if user already has an active package
                 const { data: existingPackage } = await supabase
                     .from('user_packages')
                     .select('id')
                     .eq('user_id', actualUser.id)
+                    .eq('is_active', true)
                     .maybeSingle()
 
                 let packageError
 
                 if (existingPackage) {
-                    // UPDATE existing package
-                    console.log('✏️ Updating existing package for user:', actualUser.id)
+                    // UPDATE existing package instead of inserting new one
+                    console.log('✏️ Updating existing active package for user:', actualUser.id)
                     const { error } = await supabase
                         .from('user_packages')
                         .update({
@@ -439,7 +439,7 @@ function Admin() {
                         .eq('id', existingPackage.id)
                     packageError = error
                 } else {
-                    // INSERT new package
+                    // INSERT new package only if no active package exists
                     console.log('➕ Inserting new package for user:', actualUser.id)
                     const { error } = await supabase
                         .from('user_packages')
@@ -464,7 +464,6 @@ function Admin() {
 
                 if (packageError) throw packageError
 
-                // After updating user_packages, also update users table directly (as fallback)
                 // Update user's record
                 await supabase
                     .from('users')
@@ -478,8 +477,8 @@ function Admin() {
                         payment_reference: request.payment_reference_code,
                         payment_confirmed_at: new Date().toISOString(),
                         payment_confirmed_by: user?.name || 'admin',
-                        package_pending: null,  // Clear pending upgrade
-                        pending_upgrade_id: null,  // Clear pending upgrade ID
+                        package_pending: null,
+                        pending_upgrade_id: null,
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', actualUser.id)
