@@ -423,7 +423,6 @@ function Admin() {
     }
 
     // Approve upgrade request - updates user's package
-    // Approve upgrade request - updates user's package
     async function approveUpgradeRequest(requestId) {
         if (!confirm('Approve this upgrade request? The user will be upgraded immediately.')) return
 
@@ -435,6 +434,22 @@ function Admin() {
                 .single()
 
             if (request) {
+                // VALIDATE PACKAGE ID FIRST - moved to top
+                const packageIdMap = {
+                    free: 74,
+                    basic: 75,
+                    premium: 76,
+                    enterprise: 77
+                }
+
+                const validPackageId = packageIdMap[request.to_package_tier]
+                if (!validPackageId) {
+                    throw new Error(`Invalid package tier: ${request.to_package_tier}`)
+                }
+
+                // Use validPackageId instead of request.to_package_id
+                const finalPackageId = validPackageId
+
                 // Find the actual user by email
                 const { data: actualUser } = await supabase
                     .from('users')
@@ -449,7 +464,7 @@ function Admin() {
                 const expiresAt = new Date()
                 expiresAt.setMonth(expiresAt.getMonth() + 1)
 
-                // FIRST: Check if user already has an active package
+                // Check if user already has an active package
                 const { data: existingPackage } = await supabase
                     .from('user_packages')
                     .select('id')
@@ -460,12 +475,12 @@ function Admin() {
                 let packageError
 
                 if (existingPackage) {
-                    // UPDATE existing package instead of inserting new one
+                    // UPDATE existing package
                     console.log('✏️ Updating existing active package for user:', actualUser.id)
                     const { error } = await supabase
                         .from('user_packages')
                         .update({
-                            package_id: request.to_package_id,
+                            package_id: finalPackageId,
                             package_tier: request.to_package_tier,
                             expires_at: expiresAt.toISOString(),
                             is_active: true,
@@ -481,13 +496,13 @@ function Admin() {
                         .eq('id', existingPackage.id)
                     packageError = error
                 } else {
-                    // INSERT new package only if no active package exists
+                    // INSERT new package
                     console.log('➕ Inserting new package for user:', actualUser.id)
                     const { error } = await supabase
                         .from('user_packages')
                         .insert([{
                             user_id: actualUser.id,
-                            package_id: request.to_package_id,
+                            package_id: finalPackageId,
                             package_tier: request.to_package_tier,
                             started_at: new Date().toISOString(),
                             expires_at: expiresAt.toISOString(),
@@ -507,11 +522,11 @@ function Admin() {
                 if (packageError) throw packageError
 
                 // Update user's record
-                await supabase
+                const { error: userUpdateError } = await supabase
                     .from('users')
                     .update({
                         package_tier: request.to_package_tier,
-                        package_id: request.to_package_id,
+                        package_id: finalPackageId,
                         package_name: request.to_package_tier,
                         package_expires_at: expiresAt.toISOString(),
                         payment_status: 'confirmed',
@@ -524,6 +539,10 @@ function Admin() {
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', actualUser.id)
+
+                if (userUpdateError) {
+                    console.error('Failed to update users table:', userUpdateError)
+                }
 
                 // Update upgrade request status
                 await supabase
@@ -552,7 +571,7 @@ function Admin() {
                 setNotifications(prev => [successNotif, ...prev])
                 setUnreadCount(prev => prev + 1)
                 playNotificationSound()
-                // In the approveUpgradeRequest function, where you call showBrowserNotification
+
                 try {
                     showBrowserNotification(
                         'Upgrade Approved!',
