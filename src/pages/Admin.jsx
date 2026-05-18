@@ -525,16 +525,16 @@ function Admin() {
                 const { error: userUpdateError } = await supabase
                     .from('users')
                     .update({
-                        package_tier: request.to_package_tier,
-                        package_id: finalPackageId,
-                        package_name: request.to_package_tier,
+                        package_tier: request.to_package_tier,  // Should change from 'free' to 'basic'
+                        package_id: request.to_package_id,      // Should change from 74 to 75
+                        package_name: request.to_package_tier,  // Should change to 'Basic'
                         package_expires_at: expiresAt.toISOString(),
-                        payment_status: 'confirmed',
+                        payment_status: 'confirmed',             // Should change from 'pending' to 'confirmed'
                         payment_method: request.payment_method,
                         payment_reference: request.payment_reference_code,
                         payment_confirmed_at: new Date().toISOString(),
                         payment_confirmed_by: user?.name || 'admin',
-                        package_pending: null,
+                        package_pending: null,                   // Should clear this
                         pending_upgrade_id: null,
                         updated_at: new Date().toISOString()
                     })
