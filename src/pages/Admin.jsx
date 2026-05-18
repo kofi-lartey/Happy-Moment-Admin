@@ -464,7 +464,8 @@ function Admin() {
 
                 if (packageError) throw packageError
 
-                // Update user's record in users table
+                // After updating user_packages, also update users table directly (as fallback)
+                // Update user's record
                 await supabase
                     .from('users')
                     .update({
@@ -477,7 +478,8 @@ function Admin() {
                         payment_reference: request.payment_reference_code,
                         payment_confirmed_at: new Date().toISOString(),
                         payment_confirmed_by: user?.name || 'admin',
-                        package_pending: null,
+                        package_pending: null,  // Clear pending upgrade
+                        pending_upgrade_id: null,  // Clear pending upgrade ID
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', actualUser.id)
@@ -525,6 +527,7 @@ function Admin() {
             alert('Failed to approve upgrade: ' + (err.message || 'Please try again.'))
         }
     }
+
     // Reject upgrade request
     async function rejectUpgradeRequest(requestId) {
         if (!confirm('Reject this upgrade request?')) return
