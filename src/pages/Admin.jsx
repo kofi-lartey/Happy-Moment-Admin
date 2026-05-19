@@ -602,23 +602,17 @@ function Admin() {
 
             console.log('🚀 Final payload:', approvedUserPayload)
 
-            const { data: updatedUser, error: userUpdateError } = await supabase
+            const { error: userUpdateError } = await supabase
                 .from('users')
                 .update(approvedUserPayload)
                 .eq('id', actualUser.id)
-                .select()
-                .single()
 
             if (userUpdateError) {
                 console.error('❌ USER UPDATE FAILED:', userUpdateError)
-                throw new Error('Failed to update user record: ' + userUpdateError.message)
+                throw userUpdateError
             }
 
-            if (!updatedUser) {
-                throw new Error('User update returned no data — row may not have been updated')
-            }
-
-            console.log('✅ USER SUCCESSFULLY UPDATED:', updatedUser)
+            console.log('✅ USER SUCCESSFULLY UPDATED')
 
             // 5. Update upgrade request status
             console.log('📝 Updating upgrade request status')
