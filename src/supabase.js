@@ -2,8 +2,14 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iyslevrqnzlgsfvqcekt.supabase.co'
 const supabaseKey = import.meta.env.VITE_SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5c2xldnJxbnpsZ3NmdnFjZWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NzE5NjEsImV4cCI6MjA4NzU0Nzk2MX0.WJpAGcB19xvOFnsG0ZD7pckNe7iIma3STtzTs7ZQCFc'
+const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
+
+if (!serviceRoleKey) {
+    console.warn('⚠️ VITE_SUPABASE_SERVICE_ROLE_KEY not set. Admin panel may fail to update user records due to RLS. Get your service_role key from Supabase Dashboard > Settings > API.')
+}
 
 export const supabase = createClient(supabaseUrl, supabaseKey)
+export const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : supabase
 
 // Admin credentials
 export const ADMIN_CREDENTIALS = {

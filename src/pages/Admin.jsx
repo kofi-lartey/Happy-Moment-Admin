@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { supabase, ADMIN_CREDENTIALS, STORAGE_KEYS } from '../supabase'
+import { supabase, supabaseAdmin, ADMIN_CREDENTIALS, STORAGE_KEYS } from '../supabase'
 
 function Admin() {
     const navigate = useNavigate()
@@ -496,6 +496,9 @@ function Admin() {
             const expiresAt = new Date()
             expiresAt.setMonth(expiresAt.getMonth() + 1)
 
+            // Use supabaseAdmin for writes (bypasses RLS)
+            const adminClient = supabaseAdmin || supabase
+
             // 3. Check if user already has an active package
             const { data: existingPackage, error: existingPackageError } = await supabase
                 .from('user_packages')
@@ -511,7 +514,7 @@ function Admin() {
             if (existingPackage) {
                 // UPDATE existing package
                 console.log('✏️ Updating existing active package for user:', actualUser.id)
-                const { error } = await supabase
+                const { error } = await adminClient
                     .from('user_packages')
                     .update({
                         package_id: finalPackageId,
@@ -537,7 +540,7 @@ function Admin() {
             } else {
                 // INSERT new package
                 console.log('➕ Inserting new package for user:', actualUser.id)
-                const { error } = await supabase
+                const { error } = await adminClient
                     .from('user_packages')
                     .insert([{
                         user_id: actualUser.id,
@@ -600,23 +603,31 @@ function Admin() {
                 updated_at: new Date().toISOString()
             }
 
+            console.log('🧠 USER BEING UPDATED:', actualUser.id)
+            console.log('📦 REQUEST USER ID:', request.user_id)
             console.log('🚀 Final payload:', approvedUserPayload)
 
-            const { error: userUpdateError } = await supabase
+            const { data: updatedUser, error: userUpdateError } = await adminClient
                 .from('users')
                 .update(approvedUserPayload)
                 .eq('id', actualUser.id)
+                .select('*')
 
             if (userUpdateError) {
                 console.error('❌ USER UPDATE FAILED:', userUpdateError)
                 throw userUpdateError
             }
 
+            console.log('🔥 UPDATE RESULT:', updatedUser)
+            if (!updatedUser || updatedUser.length === 0) {
+                throw new Error('No rows were updated - check RLS policies or user ID')
+            }
+
             console.log('✅ USER SUCCESSFULLY UPDATED')
 
             // 5. Update upgrade request status
             console.log('📝 Updating upgrade request status')
-            const { error: upgradeError } = await supabase
+            const { error: upgradeError } = await adminClient
                 .from('upgrade_requests')
                 .update({
                     status: 'approved',
@@ -632,7 +643,7 @@ function Admin() {
             console.log('✅ Upgrade request status updated to approved')
 
             // 6. Create an admin notification
-            await supabase
+            await adminClient
                 .from('admin_notifications')
                 .insert([{
                     title: 'Upgrade Approved ✅',
