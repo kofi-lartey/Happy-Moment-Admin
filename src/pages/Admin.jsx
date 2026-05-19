@@ -518,7 +518,7 @@ function Admin() {
                         package_tier: request.to_package_tier,
                         expires_at: expiresAt.toISOString(),
                         is_active: true,
-                        payment_status: 'confirmed',
+                        payment_status: 'approved',
                         payment_confirmed_at: new Date().toISOString(),
                         payment_confirmed_by: user?.name || 'admin',
                         payment_method: request.payment_method,
@@ -546,7 +546,7 @@ function Admin() {
                         started_at: new Date().toISOString(),
                         expires_at: expiresAt.toISOString(),
                         is_active: true,
-                        payment_status: 'confirmed',
+                        payment_status: 'approved',
                         payment_confirmed_at: new Date().toISOString(),
                         payment_confirmed_by: user?.name || 'admin',
                         payment_method: request.payment_method,
@@ -574,13 +574,13 @@ function Admin() {
                     package_id: finalPackageId,
                     package_name: request.to_package_tier.charAt(0).toUpperCase() + request.to_package_tier.slice(1),
                     package_expires_at: expiresAt.toISOString(),
-                    payment_status: 'confirmed',  // Change from 'pending' to 'confirmed'
+                    payment_status: 'approved',
                     payment_method: request.payment_method,
                     payment_reference: request.payment_reference_code,
                     payment_confirmed_at: new Date().toISOString(),
                     payment_confirmed_by: user?.name || 'admin',
-                    package_pending: null,  // CLEAR the pending flag
-                    pending_upgrade_id: null,  // CLEAR the pending upgrade ID
+                    package_pending: null,
+                    pending_upgrade_id: null,
                     updated_at: new Date().toISOString()
                 })
                 .eq('id', actualUser.id)
@@ -739,7 +739,7 @@ function Admin() {
         totalEvents: events.length,
         activeEvents: events.filter(e => e.status === 'active').length,
         totalUsers: users.length,
-        paidUsers: users.filter(u => u.payment_status === 'confirmed').length,
+        paidUsers: users.filter(u => u.payment_status === 'approved').length,
         pendingPayments: pendingPayments.length,
         pendingUpgrades: upgradeRequests.length,
         totalPhotos: photoCount + supabasePhotoCount,
@@ -1158,11 +1158,11 @@ function Admin() {
                                 <p className="text-gray-600">View all confirmed payments</p>
                             </div>
 
-                            {userPackages.filter(p => p.payment_status === 'confirmed').length === 0 ? (
+                            {userPackages.filter(p => p.payment_status === 'approved').length === 0 ? (
                                 <EmptyState icon="💰" title="No payments yet" message="Payments will appear here once users upgrade." />
                             ) : (
                                 <div className="space-y-3">
-                                    {userPackages.filter(p => p.payment_status === 'confirmed').map((userPackage) => {
+                                    {userPackages.filter(p => p.payment_status === 'approved').map((userPackage) => {
                                         const userInfo = users.find(u => u.id === userPackage.user_id)
                                         return (
                                             <div key={userPackage.id} className="bg-white rounded-2xl p-5 shadow-lg border border-gray-100 hover:shadow-xl transition-all">
