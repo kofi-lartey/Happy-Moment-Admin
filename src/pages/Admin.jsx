@@ -565,31 +565,60 @@ function Admin() {
 
             if (packageError) throw packageError
 
-            // 4. UPDATE THE USER'S RECORD - CRITICAL: Clear package_pending and update package_tier
-            console.log('📝 Updating users table for:', actualUser.id)
-            const { error: userUpdateError } = await supabase
+            // 4. UPDATE USER RECORD AFTER APPROVAL
+            console.log('📝 Updating approved user account...')
+
+            const approvedUserPayload = {
+                // PACKAGE INFO
+                package_tier: request.to_package_tier,
+                package_name:
+                    request.to_package_tier.charAt(0).toUpperCase() +
+                    request.to_package_tier.slice(1),
+
+                package_id: finalPackageId,
+
+                // PACKAGE DATES
+                package_expires_at: expiresAt.toISOString(),
+
+                // PAYMENT STATUS
+                payment_status: 'approved',
+
+                // PAYMENT DETAILS
+                payment_method: request.payment_method || 'manual',
+                payment_reference: request.payment_reference_code || null,
+                payment_reference_code: request.payment_reference_code || null,
+
+                // APPROVAL INFO
+                payment_confirmed_at: new Date().toISOString(),
+                payment_confirmed_by: user?.name || 'admin',
+
+                // VERY IMPORTANT — REMOVE PENDING STATE
+                package_pending: null,
+                pending_upgrade_id: null,
+                payment_pending: false,
+
+                updated_at: new Date().toISOString()
+            }
+
+            console.log('🚀 Final payload:', approvedUserPayload)
+
+            const { data: updatedUser, error: userUpdateError } = await supabase
                 .from('users')
-                .update({
-                    package_tier: request.to_package_tier,
-                    package_id: finalPackageId,
-                    package_name: request.to_package_tier.charAt(0).toUpperCase() + request.to_package_tier.slice(1),
-                    package_expires_at: expiresAt.toISOString(),
-                    payment_status: 'approved',
-                    payment_method: request.payment_method,
-                    payment_reference: request.payment_reference_code,
-                    payment_confirmed_at: new Date().toISOString(),
-                    payment_confirmed_by: user?.name || 'admin',
-                    package_pending: null,
-                    pending_upgrade_id: null,
-                    updated_at: new Date().toISOString()
-                })
+                .update(approvedUserPayload)
                 .eq('id', actualUser.id)
+                .select()
+                .single()
 
             if (userUpdateError) {
-                console.error('❌ Failed to update users table:', userUpdateError)
-                throw userUpdateError
+                console.error('❌ USER UPDATE FAILED:', userUpdateError)
+                throw new Error('Failed to update user record: ' + userUpdateError.message)
             }
-            console.log('✅ Users table updated successfully')
+
+            if (!updatedUser) {
+                throw new Error('User update returned no data — row may not have been updated')
+            }
+
+            console.log('✅ USER SUCCESSFULLY UPDATED:', updatedUser)
 
             // 5. Update upgrade request status
             console.log('📝 Updating upgrade request status')
